@@ -1,6 +1,6 @@
 # 青少年写作教练 (Teen Writing Coach)
 
-这是一个专为9-16岁青少年设计的“引导式写作教练” Web 应用程序。它利用大语言模型（Google Gemini API）通过苏格拉底式提问，启发学生思考，帮助他们建立写作逻辑，最终达到脱离AI也能独立写作的能力。
+这是一个专为9-16岁青少年设计的“引导式写作教练” Web 应用程序。它通过可配置的大语言模型服务端网关，以苏格拉底式提问启发学生思考，帮助他们建立写作逻辑，最终达到脱离 AI 也能独立写作的能力。
 
 ## 🌟 核心教育理念
 
@@ -28,7 +28,7 @@
 - **样式**: Tailwind CSS
 - **图标**: Lucide React
 - **Markdown 渲染**: React Markdown
-- **AI 接口**: Google GenAI SDK (`@google/genai`) + Gemini 2.5 Flash 模型
+- **AI 接入**: 服务端多模型网关，支持 Gemini、OpenAI、DeepSeek 和 OpenAI 兼容接口
 
 ## 🚀 本地运行指南
 
@@ -46,11 +46,20 @@ npm install
 ### 3. 配置环境变量
 1. 在项目根目录下找到 `.env.example` 文件。
 2. 复制该文件并重命名为 `.env`。
-3. 在 `.env` 文件中填入您的 Gemini API Key：
+3. 根据您要接入的模型服务，在 `.env` 文件中填写对应 provider 配置。例如：
 ```env
-GEMINI_API_KEY="您的_GEMINI_API_KEY"
+MODEL_PROVIDER="deepseek"
+DEEPSEEK_API_KEY="你的_DEEPSEEK_API_KEY"
+MODEL_NAME="deepseek-chat"
 ```
-*(注：如果您还没有 Gemini API Key，可以前往 [Google AI Studio](https://aistudio.google.com/app/apikey) 免费申请。)*
+
+如果使用 OpenAI 兼容接口，也可以这样配置：
+```env
+MODEL_PROVIDER="openai-compatible"
+AI_API_KEY="你的_API_KEY"
+AI_BASE_URL="https://your-api-base.example.com/v1"
+MODEL_NAME="your-model-name"
+```
 
 ### 4. 启动开发服务器
 运行以下命令启动本地开发服务器：
@@ -92,18 +101,21 @@ http://127.0.0.1:8787
 
 ## 🤖 模型配置
 
-后端现在支持两类模型接入方式：
+当前产品架构以服务端多模型接入为准，不再将 Google AI 作为唯一基础设施；Gemini 现在只是兼容 provider 之一。
 
+后端目前支持以下模型接入方式：
+
+- `MODEL_PROVIDER=openai`
+  走 OpenAI Chat Completions 协议，读取 `AI_API_KEY` 或 `OPENAI_API_KEY`
+- `MODEL_PROVIDER=deepseek`
+  走 OpenAI 兼容协议，读取 `AI_API_KEY` 或 `DEEPSEEK_API_KEY`
+- `MODEL_PROVIDER=openai-compatible`
+  走 OpenAI 兼容协议，读取 `AI_API_KEY`、`AI_BASE_URL` 与 `MODEL_NAME`
 - `MODEL_PROVIDER=gemini`
-  使用 Google Gemini SDK，读取 `AI_API_KEY` 或 `GEMINI_API_KEY`
-- `MODEL_PROVIDER=openai` / `deepseek` / `openai-compatible`
-  走 OpenAI Chat Completions 兼容协议，读取 `AI_API_KEY` 或对应 provider 的 key
+  作为兼容选项保留，使用 Google Gemini SDK，读取 `AI_API_KEY` 或 `GEMINI_API_KEY`
 
 推荐做法：
 
-- Gemini:
-  `MODEL_PROVIDER=gemini`
-  `GEMINI_API_KEY=...`
 - OpenAI:
   `MODEL_PROVIDER=openai`
   `OPENAI_API_KEY=...`
@@ -117,6 +129,9 @@ http://127.0.0.1:8787
   `AI_API_KEY=...`
   `AI_BASE_URL=...`
   `MODEL_NAME=...`
+- Gemini:
+  `MODEL_PROVIDER=gemini`
+  `GEMINI_API_KEY=...`
 
 重试配置：
 
@@ -167,10 +182,10 @@ data/teen-writing-coach.db
 
 ## 📁 项目结构说明
 
-- `/src/App.tsx`: 应用程序的主组件，包含了 UI 布局、状态管理以及与 Gemini API 交互的核心逻辑。
+- `/src/App.tsx`: 应用程序的主组件，包含 UI 布局和状态管理；当前仍保留历史 Gemini 直连示例，后续应迁移到后端 API。
 - `/src/main.tsx`: React 应用的入口文件。
 - `/src/index.css`: 全局样式文件，引入了 Tailwind CSS。
-- `/backend/server.js`: 独立后端服务，处理会话、草稿和 Gemini API 代理。
+- `/backend/server.js`: 独立后端服务，处理会话、草稿、认证、限流和多模型 API 代理。
 - `/metadata.json`: AI Studio 项目的元数据配置。
 - `/.env.example`: 环境变量示例文件。
 
