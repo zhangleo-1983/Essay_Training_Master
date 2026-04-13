@@ -4,6 +4,11 @@
 
 本文档用于正式环境联调前的配置准备，覆盖前端、后端、模型服务、鉴权和运行依赖。
 
+配套模板文件：
+
+- 前端：`templates/frontend.integration.env.example`
+- 后端：`templates/backend.integration.env.example`
+
 ## 2. 推荐部署形态
 
 - 前端：静态资源托管

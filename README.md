@@ -10,6 +10,7 @@
 - [数据库设计说明](./docs/DATABASE.md)
 - [部署与运维说明](./docs/DEPLOYMENT.md)
 - [环境配置说明](./docs/ENVIRONMENT_SETUP.md)
+- [正式环境联调执行手册](./docs/INTEGRATION_RUNBOOK.md)
 - [测试说明](./docs/TESTING.md)
 - [联调与发布清单](./docs/RELEASE_CHECKLIST.md)
 - [后续规划](./docs/ROADMAP.md)
