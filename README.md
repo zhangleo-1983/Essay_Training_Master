@@ -24,6 +24,7 @@
 ## 🛠️ 技术栈
 
 - **前端框架**: React 19 + Vite
+- **后端框架**: Express
 - **样式**: Tailwind CSS
 - **图标**: Lucide React
 - **Markdown 渲染**: React Markdown
@@ -34,7 +35,7 @@
 如果您已经将代码下载到本地，请按照以下步骤运行项目：
 
 ### 1. 环境准备
-请确保您的电脑上已安装 [Node.js](https://nodejs.org/) (建议版本 18+)。
+请确保您的电脑上已安装 [Node.js](https://nodejs.org/) (建议版本 24+，已按当前内置 SQLite 方案验证)。
 
 ### 2. 安装依赖
 在项目根目录下打开终端，运行以下命令安装所需的依赖包：
@@ -58,11 +59,118 @@ npm run dev
 ```
 启动成功后，在浏览器中访问终端输出的本地地址（通常是 `http://localhost:3000` 或 `http://localhost:5173`）即可体验应用。
 
+### 5. 启动后端 API 服务
+项目现在包含一个独立的后端服务，负责：
+- 服务端保存模型 API Key
+- 创建和持久化写作会话
+- 保存草稿和当前写作阶段
+- 代理多模型对话请求
+
+运行以下命令启动后端：
+```bash
+npm run dev:server
+```
+
+默认地址：
+```text
+http://127.0.0.1:8787
+```
+
+## 🔌 后端接口
+
+- `GET /api/health`: 健康检查与服务端配置状态
+- `GET /api/model-invocations`: 查看模型调用日志，支持 `sessionId`、`status`、`createdAfter`、`createdBefore`、`limit`、`offset`
+- `GET /api/reports/model-usage`: 查看 provider / model 用量与成本汇总，支持 `sessionId`、`status`、`createdAfter`、`createdBefore`
+- `POST /api/sessions`: 创建写作会话
+- `GET /api/sessions`: 列出会话，支持 `q`、`limit`、`offset`、`includeDeleted`、`deletedOnly`
+- `GET /api/sessions/:sessionId`: 读取写作会话，支持 `includeDeleted=true`
+- `PUT /api/sessions/:sessionId/draft`: 保存草稿
+- `PATCH /api/sessions/:sessionId/phase`: 更新当前写作阶段
+- `POST /api/sessions/:sessionId/messages`: 代理模型对话
+- `DELETE /api/sessions/:sessionId`: 软删除会话
+- `POST /api/sessions/:sessionId/restore`: 恢复已删除会话
+
+## 🤖 模型配置
+
+后端现在支持两类模型接入方式：
+
+- `MODEL_PROVIDER=gemini`
+  使用 Google Gemini SDK，读取 `AI_API_KEY` 或 `GEMINI_API_KEY`
+- `MODEL_PROVIDER=openai` / `deepseek` / `openai-compatible`
+  走 OpenAI Chat Completions 兼容协议，读取 `AI_API_KEY` 或对应 provider 的 key
+
+推荐做法：
+
+- Gemini:
+  `MODEL_PROVIDER=gemini`
+  `GEMINI_API_KEY=...`
+- OpenAI:
+  `MODEL_PROVIDER=openai`
+  `OPENAI_API_KEY=...`
+  `MODEL_NAME=...`
+- DeepSeek:
+  `MODEL_PROVIDER=deepseek`
+  `DEEPSEEK_API_KEY=...`
+  `MODEL_NAME=...`
+- 其他兼容 OpenAI 协议的模型服务:
+  `MODEL_PROVIDER=openai-compatible`
+  `AI_API_KEY=...`
+  `AI_BASE_URL=...`
+  `MODEL_NAME=...`
+
+重试配置：
+
+- `MODEL_MAX_RETRIES`
+  上游失败后的最大重试次数，默认 `2`
+- `MODEL_RETRY_BASE_DELAY_MS`
+  指数退避的起始延迟，默认 `300`
+
+如果要统计估算成本，可以配置：
+
+- `MODEL_PRICING_JSON`
+  用 `provider:model` 作为 key，配置输入/输出单价
+
+## 🧾 调用日志与限流
+
+- 每次真正进入模型调用的请求，都会写入 SQLite `model_invocations` 日志表
+- 日志记录包含用户、provider、model、成功/失败状态、尝试次数、耗时、请求字数、响应字数、估算 token、估算成本、错误信息
+- `POST /api/sessions/:sessionId/messages` 现在默认启用 SQLite 限流
+- 预期内的 provider 配置错误或上游错误会降级为单行 `warn`，避免服务端日志被完整堆栈刷屏
+
+默认限流配置：
+
+- `MESSAGE_RATE_LIMIT_MAX_REQUESTS=20`
+- `MESSAGE_RATE_LIMIT_WINDOW_MS=60000`
+
+超过限制时，接口会返回 `429`，并带上 `Retry-After` 与基础限流响应头
+
+所有会话数据默认保存到 SQLite 文件：
+```text
+data/teen-writing-coach.db
+```
+
+如果历史上已经存在 `data/sessions/*.json`，服务启动时会自动尝试导入。
+删除会话时默认执行软删除，数据仍保留在 SQLite 中，可通过恢复接口找回。
+
+## 🔐 认证与用户隔离
+
+- `AUTH_MODE=disabled`
+  后端不做认证，兼容本地单人开发
+- `AUTH_MODE=api-key`
+  后端要求 `Authorization: Bearer <key>` 或 `X-API-Key`
+
+启用 `api-key` 模式后：
+
+- 创建的会话会绑定到 `userId`
+- 普通用户只能访问自己的会话、日志和报表
+- `role=admin` 的 key 可以查看全部数据
+
 ## 📁 项目结构说明
 
 - `/src/App.tsx`: 应用程序的主组件，包含了 UI 布局、状态管理以及与 Gemini API 交互的核心逻辑。
 - `/src/main.tsx`: React 应用的入口文件。
 - `/src/index.css`: 全局样式文件，引入了 Tailwind CSS。
+- `/backend/server.js`: 独立后端服务，处理会话、草稿和 Gemini API 代理。
 - `/metadata.json`: AI Studio 项目的元数据配置。
 - `/.env.example`: 环境变量示例文件。
 
