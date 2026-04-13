@@ -14,6 +14,8 @@
 
 ### 认证
 
+- `VITE_API_BASE_URL`
+- `VITE_API_KEY`
 - `AUTH_MODE`
 - `AUTH_API_KEYS_JSON`
 
@@ -121,7 +123,6 @@ npm run dev:server
 
 ## 10. 生产化前必须完成的事项
 
-- 前端正式接入后端 API
 - 正式用户登录体系
 - 数据库从 SQLite 升级到 PostgreSQL
 - Redis 限流与缓存

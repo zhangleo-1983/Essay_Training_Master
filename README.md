@@ -55,7 +55,17 @@ npm install
 ### 3. 配置环境变量
 1. 在项目根目录下找到 `.env.example` 文件。
 2. 复制该文件并重命名为 `.env`。
-3. 根据您要接入的模型服务，在 `.env` 文件中填写对应 provider 配置。例如：
+3. 前端通过后端 API 工作，请先配置前端 API 地址：
+```env
+VITE_API_BASE_URL="http://127.0.0.1:8787/api"
+```
+
+如果后端启用了 `AUTH_MODE=api-key`，前端本地开发还需要配置：
+```env
+VITE_API_KEY="你的本地开发 API Key"
+```
+
+4. 根据您要接入的模型服务，在 `.env` 文件中填写对应 provider 配置。例如：
 ```env
 MODEL_PROVIDER="deepseek"
 DEEPSEEK_API_KEY="你的_DEEPSEEK_API_KEY"
@@ -191,7 +201,8 @@ data/teen-writing-coach.db
 
 ## 📁 项目结构说明
 
-- `/src/App.tsx`: 应用程序的主组件，包含 UI 布局和状态管理；当前仍保留历史 Gemini 直连示例，后续应迁移到后端 API。
+- `/src/App.tsx`: 应用程序的主组件，包含学生单人版 MVP 的页面流程、会话恢复、自动保存和错误处理。
+- `/src/api.ts`: 前端 API 访问层，负责调用后端会话与消息接口。
 - `/src/main.tsx`: React 应用的入口文件。
 - `/src/index.css`: 全局样式文件，引入了 Tailwind CSS。
 - `/backend/server.js`: 独立后端服务，处理会话、草稿、认证、限流和多模型 API 代理。

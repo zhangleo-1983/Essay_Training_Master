@@ -1,169 +1,597 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI } from '@google/genai';
-import { Send, BookOpen, PenTool, Lightbulb, ListTree, FileText, CheckCircle, Bot, User, Loader2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  BookOpen,
+  Bot,
+  CheckCircle,
+  FileText,
+  FolderOpen,
+  Lightbulb,
+  ListTree,
+  Loader2,
+  PenTool,
+  Plus,
+  RotateCcw,
+  Send,
+  Trash2,
+  User,
+} from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-
-// Initialize Gemini API
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+import { api, type Message, type Session, type SessionSummary } from './api.ts';
 
 // Define writing phases
 const PHASES = [
-  { id: 'setup', name: '设定题目', icon: BookOpen },
-  { id: 'analysis', name: '审题立意', icon: Lightbulb },
-  { id: 'brainstorm', name: '选材构思', icon: PenTool },
-  { id: 'outline', name: '谋篇布局', icon: ListTree },
-  { id: 'draft', name: '起草成文', icon: FileText },
-  { id: 'review', name: '修改润色', icon: CheckCircle },
+  { id: 'setup', name: '设定题目', icon: BookOpen, goal: '输入题目，准备开始本次写作训练。' },
+  { id: 'analysis', name: '审题立意', icon: Lightbulb, goal: '找到题眼，明确中心思想。' },
+  { id: 'brainstorm', name: '选材构思', icon: PenTool, goal: '回忆真实素材，筛选可写内容。' },
+  { id: 'outline', name: '谋篇布局', icon: ListTree, goal: '安排结构，确定详略顺序。' },
+  { id: 'draft', name: '起草成文', icon: FileText, goal: '把提纲展开成段落，开始成文。' },
+  { id: 'review', name: '修改润色', icon: CheckCircle, goal: '检查语言、结构和细节，完成润色。' },
 ];
 
-type Message = {
-  role: 'user' | 'model';
-  content: string;
-};
+const GRADE_OPTIONS = [
+  { value: '', label: '默认难度' },
+  { value: 'primary-lower', label: '小学低年级' },
+  { value: 'primary-upper', label: '小学高年级' },
+  { value: 'middle-school', label: '初中' },
+];
+
+const ACTIVE_SESSION_STORAGE_KEY = 'teen-writing-coach.active-session-id';
+
+function formatTimeLabel(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return '时间未知';
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function phaseNameFromIndex(index: number) {
+  return PHASES[index]?.name || '写作训练';
+}
+
+function extractMessage(error: unknown) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return '发生未知错误，请稍后再试。';
+}
+
+function SessionCard({
+  session,
+  isBusy,
+  onOpen,
+  onDelete,
+  onRestore,
+}: {
+  session: SessionSummary;
+  isBusy: boolean;
+  onOpen: (sessionId: string) => void;
+  onDelete: (sessionId: string) => void;
+  onRestore: (sessionId: string) => void;
+}) {
+  const deleted = Boolean(session.deletedAt);
+
+  return (
+    <div className={`rounded-2xl border p-4 transition-colors ${deleted ? 'border-slate-200 bg-slate-50' : 'border-slate-200 bg-white hover:border-blue-200'}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-sm font-semibold text-slate-800">{session.essayTitle}</h3>
+            {deleted && (
+              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] text-slate-600">
+                已删除
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            {phaseNameFromIndex(session.currentPhaseIndex)} · {formatTimeLabel(session.updatedAt)}
+          </p>
+          <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">
+            {session.essayDraft?.trim() || '还没有草稿内容，打开后继续写作。'}
+          </p>
+        </div>
+        <FolderOpen className="mt-0.5 shrink-0 text-slate-300" size={18} />
+      </div>
+
+      <div className="mt-4 flex items-center gap-2">
+        <button
+          type="button"
+          disabled={isBusy || deleted}
+          onClick={() => onOpen(session.id)}
+          className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          打开继续写
+        </button>
+        {deleted ? (
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={() => onRestore(session.id)}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RotateCcw size={14} />
+            恢复
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={() => onDelete(session.id)}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Trash2 size={14} />
+            删除
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
+  const [screen, setScreen] = useState<'home' | 'workspace'>('home');
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const [recentSessions, setRecentSessions] = useState<SessionSummary[]>([]);
   const [essayTitle, setEssayTitle] = useState('');
-  const [essayDraft, setEssayDraft] = useState('');
-  const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [gradeLevel, setGradeLevel] = useState('');
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [isSwitchingPhase, setIsSwitchingPhase] = useState(false);
+  const [sessionActionId, setSessionActionId] = useState<string | null>(null);
+  const [homeError, setHomeError] = useState<string | null>(null);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [draftSaveState, setDraftSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastSavedDraftRef = useRef('');
 
-  const currentPhase = PHASES[currentPhaseIndex];
+  const currentPhaseIndex = activeSession?.currentPhaseIndex ?? 0;
+  const currentPhase = PHASES[currentPhaseIndex] || PHASES[0];
 
-  // Auto-scroll chat
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [activeSession?.messages, isSending]);
 
-  const getSystemPrompt = (phaseId: string, title: string) => {
-    const basePrompt = `你是一个专门为9-16岁青少年设计的“引导式写作教练”。你的核心任务是：通过苏格拉底式提问启发学生思考，帮助他们建立写作逻辑。
-绝对禁止：直接替学生写出完整的段落或文章。
-交互原则：
-1. 每次只问一个启发式问题，不要一次性抛出多个问题。
-2. 语气要亲切、鼓励、符合青少年的认知水平（可以适当使用emoji）。
-3. 如果学生回答不知道，给出2-3个思考方向的提示（脚手架），而不是直接给答案。
-4. 引导学生将讨论的结果写在右侧的“我的草稿”中。
-5. 严格遵守当前阶段的任务，如果当前阶段目标达成，主动提示学生点击上方的进度条进入下一阶段。
+  useEffect(() => {
+    let cancelled = false;
 
-当前学生的作文题目是：《${title}》
-当前处于写作的【${PHASES.find(p => p.id === phaseId)?.name}】阶段。
-`;
+    async function bootstrap() {
+      setIsLoadingSessions(true);
+      try {
+        const listResult = await api.listSessions();
+        if (cancelled) {
+          return;
+        }
 
-    const phaseInstructions: Record<string, string> = {
-      analysis: '此阶段目标：引导学生分析题目中的关键词（题眼），明确文章要表达的中心思想（立意）。问他们看到了题目首先想到什么？',
-      brainstorm: '此阶段目标：引导学生回忆生活中的真实经历、阅读过的素材，挑选最能表达中心思想的材料。问他们有没有具体的故事或例子？',
-      outline: '此阶段目标：引导学生安排文章的结构（开头、中间、结尾）。先写什么，后写什么？哪里需要详写，哪里需要略写？',
-      draft: '此阶段目标：鼓励学生开始动笔写具体的段落。可以一段一段地引导，关注细节描写（动作、语言、心理等）。',
-      review: '此阶段目标：引导学生检查自己的草稿。句子是否通顺？有没有错别字？开头结尾是否呼应？细节是否足够生动？',
+        setRecentSessions(listResult.sessions);
+        const storedSessionId = window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+        if (storedSessionId) {
+          try {
+            const { session } = await api.getSession(storedSessionId);
+            if (cancelled) {
+              return;
+            }
+
+            lastSavedDraftRef.current = session.essayDraft;
+            setActiveSession(session);
+            setDraftSaveState('saved');
+            setScreen('workspace');
+          } catch (error) {
+            window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+            if (!cancelled) {
+              setHomeError(`最近一次会话恢复失败：${extractMessage(error)}`);
+            }
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setHomeError(extractMessage(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingSessions(false);
+          setIsBootstrapping(false);
+        }
+      }
+    }
+
+    bootstrap();
+
+    return () => {
+      cancelled = true;
     };
+  }, []);
 
-    return basePrompt + '\n' + (phaseInstructions[phaseId] || '');
-  };
+  useEffect(() => {
+    if (!activeSession || screen !== 'workspace') {
+      return;
+    }
+
+    if (activeSession.essayDraft === lastSavedDraftRef.current) {
+      return;
+    }
+
+    const sessionId = activeSession.id;
+    const draftToSave = activeSession.essayDraft;
+    setDraftSaveState('saving');
+    setWorkspaceError(null);
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const { session } = await api.saveDraft(sessionId, draftToSave);
+        lastSavedDraftRef.current = draftToSave;
+        setDraftSaveState('saved');
+        setActiveSession((previous) => {
+          if (!previous || previous.id !== sessionId) {
+            return previous;
+          }
+
+          if (previous.essayDraft !== draftToSave) {
+            return previous;
+          }
+
+          return {
+            ...previous,
+            updatedAt: session.updatedAt,
+          };
+        });
+      } catch (error) {
+        setDraftSaveState('error');
+        setWorkspaceError(`草稿自动保存失败：${extractMessage(error)}`);
+      }
+    }, 700);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [activeSession?.essayDraft, activeSession?.id, screen]);
+
+  async function refreshSessions() {
+    setIsLoadingSessions(true);
+    try {
+      const result = await api.listSessions();
+      setRecentSessions(result.sessions);
+    } catch (error) {
+      setHomeError(extractMessage(error));
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  }
+
+  function applySession(session: Session) {
+    lastSavedDraftRef.current = session.essayDraft;
+    setActiveSession(session);
+    setScreen('workspace');
+    setWorkspaceError(null);
+    setDraftSaveState('saved');
+    window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, session.id);
+  }
 
   const handleStart = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!essayTitle.trim()) return;
-    
-    setCurrentPhaseIndex(1); // Move to analysis
-    
-    // Initial greeting
-    const initialMessage = `你好！我是你的写作教练。今天我们要挑战的题目是《${essayTitle}》。\n\n我们先从第一步“审题立意”开始吧！看到这个题目，你觉得最核心的词（题眼）是哪几个？你想通过这篇文章表达什么情感或道理呢？`;
-    setMessages([{ role: 'model', content: initialMessage }]);
+    if (!essayTitle.trim()) {
+      return;
+    }
+
+    setIsStarting(true);
+    setHomeError(null);
+    try {
+      const { session } = await api.createSession({
+        essayTitle: essayTitle.trim(),
+        gradeLevel: gradeLevel || undefined,
+      });
+      applySession(session);
+      setEssayTitle('');
+      setGradeLevel('');
+      await refreshSessions();
+    } catch (error) {
+      setHomeError(extractMessage(error));
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isSending || !activeSession) {
+      return;
+    }
 
     const userMsg = input.trim();
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
-    setIsLoading(true);
+    setIsSending(true);
+    setWorkspaceError(null);
 
     try {
-      const systemInstruction = getSystemPrompt(currentPhase.id, essayTitle);
-      
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [
-          ...messages.map(m => ({ role: m.role, parts: [{ text: m.content }] })),
-          { role: 'user', parts: [{ text: userMsg }] }
-        ],
-        config: {
-          systemInstruction: systemInstruction,
-          temperature: 0.7,
-        }
-      });
-
-      const aiResponse = response.text || '抱歉，我刚才走神了，你能再说一遍吗？';
-      setMessages(prev => [...prev, { role: 'model', content: aiResponse }]);
+      const { session } = await api.sendMessage(activeSession.id, userMsg);
+      applySession(session);
+      await refreshSessions();
     } catch (error) {
-      console.error('Error calling Gemini:', error);
-      setMessages(prev => [...prev, { role: 'model', content: '哎呀，网络好像有点问题，请稍后再试哦。' }]);
+      setInput(userMsg);
+      setWorkspaceError(extractMessage(error));
     } finally {
-      setIsLoading(false);
+      setIsSending(false);
     }
   };
 
-  const handlePhaseChange = (index: number) => {
-    if (index === 0) return; // Don't go back to setup
-    setCurrentPhaseIndex(index);
-    
-    // Add a transition message from the AI
-    const transitionMsg = `太棒了！我们现在进入【${PHASES[index].name}】阶段。准备好了吗？我们继续！`;
-    setMessages(prev => [...prev, { role: 'model', content: transitionMsg }]);
-  };
+  async function handlePhaseChange(index: number) {
+    if (!activeSession || index === 0 || index === activeSession.currentPhaseIndex) {
+      return;
+    }
 
-  // Welcome Screen
-  if (currentPhaseIndex === 0) {
+    setIsSwitchingPhase(true);
+    setWorkspaceError(null);
+    try {
+      const { session } = await api.updatePhase(activeSession.id, index);
+      applySession(session);
+      await refreshSessions();
+    } catch (error) {
+      setWorkspaceError(extractMessage(error));
+    } finally {
+      setIsSwitchingPhase(false);
+    }
+  }
+
+  async function openSession(sessionId: string) {
+    setSessionActionId(sessionId);
+    setHomeError(null);
+    try {
+      const { session } = await api.getSession(sessionId);
+      applySession(session);
+    } catch (error) {
+      setHomeError(extractMessage(error));
+    } finally {
+      setSessionActionId(null);
+    }
+  }
+
+  async function deleteSession(sessionId: string) {
+    setSessionActionId(sessionId);
+    setHomeError(null);
+    setWorkspaceError(null);
+    try {
+      await api.deleteSession(sessionId);
+      if (activeSession?.id === sessionId) {
+        setActiveSession(null);
+        setScreen('home');
+        setDraftSaveState('idle');
+        window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+      }
+      await refreshSessions();
+    } catch (error) {
+      const message = extractMessage(error);
+      if (activeSession?.id === sessionId) {
+        setWorkspaceError(message);
+      } else {
+        setHomeError(message);
+      }
+    } finally {
+      setSessionActionId(null);
+    }
+  }
+
+  async function restoreSession(sessionId: string) {
+    setSessionActionId(sessionId);
+    setHomeError(null);
+    try {
+      const { session } = await api.restoreSession(sessionId);
+      await refreshSessions();
+      applySession(session);
+    } catch (error) {
+      setHomeError(extractMessage(error));
+    } finally {
+      setSessionActionId(null);
+    }
+  }
+
+  function returnHome() {
+    setScreen('home');
+    setWorkspaceError(null);
+  }
+
+  function createNewSession() {
+    setActiveSession(null);
+    setEssayTitle('');
+    setGradeLevel('');
+    setDraftSaveState('idle');
+    window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+    setScreen('home');
+  }
+
+  if (isBootstrapping) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
-          <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Bot size={40} />
-          </div>
-          <h1 className="text-3xl font-bold text-slate-800 mb-2">青少年写作教练</h1>
-          <p className="text-slate-500 mb-8">输入你的作文题目，让我们一起开启写作之旅！我会一步步引导你，直到你写出满意的文章。</p>
-          
-          <form onSubmit={handleStart} className="space-y-4">
-            <div>
-              <input
-                type="text"
-                value={essayTitle}
-                onChange={(e) => setEssayTitle(e.target.value)}
-                placeholder="例如：难忘的一天、我的梦想..."
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-lg"
-                required
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors flex items-center justify-center gap-2 text-lg"
-            >
-              开始挑战 <Send size={20} />
-            </button>
-          </form>
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="flex items-center gap-3 rounded-2xl bg-white px-6 py-5 shadow-sm ring-1 ring-slate-200">
+          <Loader2 className="animate-spin text-blue-600" size={20} />
+          <span className="text-sm text-slate-600">正在恢复你的写作会话...</span>
         </div>
       </div>
     );
   }
 
-  // Main Workspace
+  if (screen === 'home') {
+    return (
+      <div className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6">
+        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+          <div className="rounded-3xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
+            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 text-blue-600">
+              <Bot size={34} />
+            </div>
+            <h1 className="text-3xl font-bold text-slate-900">青少年写作教练</h1>
+            <p className="mt-3 max-w-xl text-sm leading-7 text-slate-500">
+              这是学生单人版 MVP。输入作文题目后，系统会创建独立写作会话，后续聊天、草稿和阶段都会自动保存到后端。
+            </p>
+
+            {homeError && (
+              <div className="mt-6 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                <AlertCircle className="mt-0.5 shrink-0" size={16} />
+                <span>{homeError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleStart} className="mt-8 space-y-4">
+              <div>
+                <label htmlFor="essay-title" className="mb-2 block text-sm font-medium text-slate-700">
+                  作文题目
+                </label>
+                <input
+                  id="essay-title"
+                  type="text"
+                  value={essayTitle}
+                  onChange={(e) => setEssayTitle(e.target.value)}
+                  placeholder="例如：难忘的一天、我的梦想..."
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-lg outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="grade-level" className="mb-2 block text-sm font-medium text-slate-700">
+                  学段
+                </label>
+                <select
+                  id="grade-level"
+                  value={gradeLevel}
+                  onChange={(e) => setGradeLevel(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                >
+                  {GRADE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isStarting}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 text-lg font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isStarting ? <Loader2 className="animate-spin" size={18} /> : <Plus size={18} />}
+                开始新的写作训练
+              </button>
+            </form>
+          </div>
+
+          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">最近写作会话</h2>
+                <p className="mt-1 text-sm text-slate-500">支持继续写、删除和恢复。</p>
+              </div>
+              {isLoadingSessions && <Loader2 className="animate-spin text-slate-400" size={18} />}
+            </div>
+
+            {recentSessions.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                还没有历史会话。创建第一篇作文后，这里会出现最近写作记录。
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {recentSessions.map((session) => (
+                  <SessionCard
+                    key={session.id}
+                    session={session}
+                    isBusy={sessionActionId === session.id}
+                    onOpen={openSession}
+                    onDelete={deleteSession}
+                    onRestore={restoreSession}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeSession) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Header & Progress */}
       <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-              <Bot className="text-blue-600" />
-              题目：《{essayTitle}》
-            </h1>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <Bot className="text-blue-600" />
+                题目：《{activeSession.essayTitle}》
+              </h1>
+              <p className="mt-1 text-sm text-slate-500">
+                {activeSession.gradeLevel ? `学段：${GRADE_OPTIONS.find((option) => option.value === activeSession.gradeLevel)?.label || activeSession.gradeLevel}` : '未设置学段'} · 最近更新：{formatTimeLabel(activeSession.updatedAt)}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={returnHome}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                <ArrowLeft size={16} />
+                会话列表
+              </button>
+              <button
+                type="button"
+                onClick={createNewSession}
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+              >
+                <Plus size={16} />
+                新建作文
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteSession(activeSession.id)}
+                disabled={sessionActionId === activeSession.id}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 size={16} />
+                删除当前作文
+              </button>
+            </div>
           </div>
-          
-          {/* Progress Stepper */}
+
+          {workspaceError && (
+            <div className="mb-4 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              <AlertCircle className="mt-0.5 shrink-0" size={16} />
+              <span>{workspaceError}</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-medium text-slate-500 flex items-center gap-2">
+              <Bot className="text-blue-600" />
+              当前目标：{currentPhase.goal}
+            </h2>
+            <span className={`rounded-full px-3 py-1 text-xs font-medium ${
+              draftSaveState === 'saving'
+                ? 'bg-amber-100 text-amber-700'
+                : draftSaveState === 'error'
+                  ? 'bg-rose-100 text-rose-700'
+                  : 'bg-emerald-100 text-emerald-700'
+            }`}>
+              {draftSaveState === 'saving'
+                ? '草稿保存中'
+                : draftSaveState === 'error'
+                  ? '草稿保存失败'
+                  : '草稿已保存'}
+            </span>
+          </div>
+
           <div className="flex items-center justify-between relative">
             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-slate-100 -z-10"></div>
             {PHASES.slice(1).map((phase, idx) => {
@@ -175,7 +603,8 @@ export default function App() {
               return (
                 <button
                   key={phase.id}
-                  onClick={() => handlePhaseChange(actualIndex)}
+                  onClick={() => void handlePhaseChange(actualIndex)}
+                  disabled={isSwitchingPhase}
                   className={`flex flex-col items-center gap-2 group ${isActive ? 'text-blue-600' : isPast ? 'text-green-500' : 'text-slate-400'}`}
                 >
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
@@ -193,10 +622,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Split */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-140px)]">
-        
-        {/* Left: Chat Interface */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden">
           <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex items-center gap-2">
             <Bot className="text-blue-600" size={20} />
@@ -204,7 +630,7 @@ export default function App() {
           </div>
           
           <div className="flex-1 overflow-y-auto p-4 space-y-6">
-            {messages.map((msg, idx) => (
+            {activeSession.messages.map((msg: Message, idx: number) => (
               <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                   msg.role === 'user' ? 'bg-indigo-100 text-indigo-600' : 'bg-blue-100 text-blue-600'
@@ -226,7 +652,7 @@ export default function App() {
                 </div>
               </div>
             ))}
-            {isLoading && (
+            {isSending && (
               <div className="flex gap-3">
                 <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
                   <Bot size={16} />
@@ -247,12 +673,12 @@ export default function App() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="回复教练..."
-                disabled={isLoading}
+                disabled={isSending}
                 className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:opacity-50"
               />
               <button
                 type="submit"
-                disabled={!input.trim() || isLoading}
+                disabled={!input.trim() || isSending}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50 transition-colors"
               >
                 <Send size={20} />
@@ -261,22 +687,36 @@ export default function App() {
           </form>
         </div>
 
-        {/* Right: Workspace / Draft Area */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden">
           <div className="bg-amber-50 px-4 py-3 border-b border-amber-100 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <PenTool className="text-amber-600" size={20} />
               <span className="font-medium text-amber-900">我的草稿本</span>
             </div>
-            <span className="text-xs text-amber-600 bg-amber-100 px-2 py-1 rounded-md">
-              {essayDraft.length} 字
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-amber-600 bg-amber-100 px-2 py-1 rounded-md">
+                {activeSession.essayDraft.length} 字
+              </span>
+              <span className="text-xs text-slate-500">
+                自动保存
+              </span>
+            </div>
           </div>
           
           <div className="flex-1 p-4">
             <textarea
-              value={essayDraft}
-              onChange={(e) => setEssayDraft(e.target.value)}
+              value={activeSession.essayDraft}
+              onChange={(e) => {
+                const nextDraft = e.target.value;
+                setActiveSession((previous) => (
+                  previous
+                    ? {
+                        ...previous,
+                        essayDraft: nextDraft,
+                      }
+                    : previous
+                ));
+              }}
               placeholder="在这里记录你的灵感、提纲和正文草稿...&#10;教练不会直接帮你写，你需要自己动手哦！"
               className="w-full h-full resize-none outline-none text-slate-700 leading-relaxed text-base placeholder:text-slate-300"
             />
