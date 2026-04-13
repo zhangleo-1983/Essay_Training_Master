@@ -1,20 +1,75 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 青少年写作教练 (Teen Writing Coach)
 
-# Run and deploy your AI Studio app
+这是一个专为9-16岁青少年设计的“引导式写作教练” Web 应用程序。它利用大语言模型（Google Gemini API）通过苏格拉底式提问，启发学生思考，帮助他们建立写作逻辑，最终达到脱离AI也能独立写作的能力。
 
-This contains everything you need to run your app locally.
+## 🌟 核心教育理念
 
-View your app in AI Studio: https://ai.studio/apps/8e292b8e-7217-473a-b404-c477ceaa1e61
+本项目严格遵循**“授人以渔”**（Scaffolding 脚手架教学法）的原则：
+- **拒绝代写**：Agent 绝对不会直接替学生写出完整的段落或文章。
+- **启发式提问**：每次只抛出一个问题，引导学生一步步深入思考。
+- **提供脚手架**：当学生遇到困难时，提供思考方向的提示，而不是直接给答案。
 
-## Run Locally
+## ✨ 主要功能
 
-**Prerequisites:**  Node.js
+- **双屏协同工作区 (Split-Screen Workspace)**：
+  - **左侧（教练辅导区）**：与 AI 教练进行对话，获取写作灵感和指导。
+  - **右侧（我的草稿本）**：专属的写作区域，学生可以将讨论出的灵感、提纲和段落记录在这里。
+- **五步引导法 (The 5-Step Process)**：
+  1. **审题立意**：分析题目关键词，明确中心思想。
+  2. **选材构思**：发散思维，挑选最能表达中心思想的素材。
+  3. **谋篇布局**：安排文章结构（开头、中间、结尾）。
+  4. **起草成文**：动笔写具体段落，关注细节描写。
+  5. **修改润色**：检查草稿，修改语病，提升文采。
 
+## 🛠️ 技术栈
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- **前端框架**: React 19 + Vite
+- **样式**: Tailwind CSS
+- **图标**: Lucide React
+- **Markdown 渲染**: React Markdown
+- **AI 接口**: Google GenAI SDK (`@google/genai`) + Gemini 2.5 Flash 模型
+
+## 🚀 本地运行指南
+
+如果您已经将代码下载到本地，请按照以下步骤运行项目：
+
+### 1. 环境准备
+请确保您的电脑上已安装 [Node.js](https://nodejs.org/) (建议版本 18+)。
+
+### 2. 安装依赖
+在项目根目录下打开终端，运行以下命令安装所需的依赖包：
+```bash
+npm install
+```
+
+### 3. 配置环境变量
+1. 在项目根目录下找到 `.env.example` 文件。
+2. 复制该文件并重命名为 `.env`。
+3. 在 `.env` 文件中填入您的 Gemini API Key：
+```env
+GEMINI_API_KEY="您的_GEMINI_API_KEY"
+```
+*(注：如果您还没有 Gemini API Key，可以前往 [Google AI Studio](https://aistudio.google.com/app/apikey) 免费申请。)*
+
+### 4. 启动开发服务器
+运行以下命令启动本地开发服务器：
+```bash
+npm run dev
+```
+启动成功后，在浏览器中访问终端输出的本地地址（通常是 `http://localhost:3000` 或 `http://localhost:5173`）即可体验应用。
+
+## 📁 项目结构说明
+
+- `/src/App.tsx`: 应用程序的主组件，包含了 UI 布局、状态管理以及与 Gemini API 交互的核心逻辑。
+- `/src/main.tsx`: React 应用的入口文件。
+- `/src/index.css`: 全局样式文件，引入了 Tailwind CSS。
+- `/metadata.json`: AI Studio 项目的元数据配置。
+- `/.env.example`: 环境变量示例文件。
+
+## 🤝 扩展建议
+
+如果您希望继续完善这个项目，可以考虑添加以下功能：
+1. **用户系统**：添加登录注册功能，保存不同学生的写作记录。
+2. **历史记录**：将右侧的“草稿本”内容持久化保存到数据库中。
+3. **难度自适应**：根据学生的年级（如小学、初中）动态调整 AI 教练的词汇难度和提问深度。
+4. **语音交互**：接入语音识别和合成，让交互更加自然。
